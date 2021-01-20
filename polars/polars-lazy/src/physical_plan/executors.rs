@@ -574,73 +574,116 @@ impl Executor for PartitionGroupByExec {
             .map(|(e, _)| planner.create_physical_expr(e.clone(), Context::Aggregation))
             .collect::<Result<Vec<_>>>()?;
 
-        let n_threads = num_cpus::get();
+        let keys = self
+            .keys
+            .iter()
+            .map(|e| e.evaluate(&original_df))
+            .collect::<Result<Vec<_>>>()?;
+        let gbs = original_df.groupby_with_series(keys, true, false)?;
+        let dfs = gbs.par_iter()
+            .map(|gb| {
 
-        // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
-        // splitted on several threads. Than the final result we apply the same groupby again.
-        let dfs = split_df(&original_df, n_threads)?;
+                let groups = gb.get_groups();
 
-        let dfs: Result<_> = thread::scope(|s| {
+                let mut columns = gb.keys();
+                let agg_columns = self.phys_aggs
+                    .iter()
+                    .map(|expr| {
+                        let agg_expr = expr.as_agg_expr()?;
+                        let opt_agg = agg_expr.evaluate_partitioned(&original_df, groups)?;
 
-            let handles = (0..n_threads)
-                .map(|i| {
-
-                    let df = &dfs[i];
-                    let keys = self
-                        .keys
-                        .iter()
-                        .map(|e| e.evaluate(&df))
-                        .collect::<Result<Vec<_>>>()?;
-                    let phys_aggs = &self.phys_aggs;
-
-                    let handle = s.spawn(move |_| {
-
-                        let gb = df.groupby_with_series(keys, false, true)?.pop().unwrap();
-                        let groups = gb.get_groups();
-
-                        let mut columns = gb.keys();
-                        let agg_columns = phys_aggs
-                            .iter()
-                            .map(|expr| {
-                                let agg_expr = expr.as_agg_expr()?;
-                                let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
-                                if let Some(agg) = &opt_agg {
-                                    if agg[0].len() != groups.len() {
-                                        panic!(format!(
-                                            "returned aggregation is a different length: {} than the group lengths: {}",
-                                            agg.len(),
-                                            groups.len()
-                                        ))
-                                    }
-                                };
-                                Ok(opt_agg)
-                            }).collect::<Result<Vec<_>>>()?;
-
-                        for agg in agg_columns {
-                            if let Some(agg) = agg {
-                                for agg in agg {
-                                    columns.push(agg)
-                                }
+                        if let Some(agg) = &opt_agg {
+                            if agg[0].len() != groups.len() {
+                                panic!(format!(
+                                    "returned aggregation is a different length: {} than the group lengths: {}",
+                                    agg.len(),
+                                    groups.len()
+                                ))
                             }
+                        };
+                        Ok(opt_agg)
+                    }).collect::<Result<Vec<_>>>()?;
+
+                for agg in agg_columns {
+                    if let Some(agg) = agg {
+                        for agg in agg {
+                            columns.push(agg)
                         }
+                    }
+                }
 
-                        let df = DataFrame::new_no_checks(columns);
-                        Ok(df)
+                let df = DataFrame::new_no_checks(columns);
+                Ok(df)
 
-                    });
+            }).collect::<Result<Vec<_>>>()?;
 
-                    Ok(handle)
-
-                }).collect::<Result<Vec<_>>>()?;
-
-            let dfs = handles.into_iter()
-                .map(|h| {
-                    h.join().unwrap()
-                }).collect::<Result<Vec<_>>>()?;
-            // the assignment is for readability
-            Ok(dfs)
-        }).unwrap();
-        let dfs = dfs?;
+        // let n_threads = num_cpus::get();
+        //
+        // // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
+        // // splitted on several threads. Than the final result we apply the same groupby again.
+        // let dfs = split_df(&original_df, n_threads)?;
+        //
+        // let dfs: Result<_> = thread::scope(|s| {
+        //
+        //     let handles = (0..n_threads)
+        //         .map(|i| {
+        //
+        //             let df = &dfs[i];
+        //             let keys = self
+        //                 .keys
+        //                 .iter()
+        //                 .map(|e| e.evaluate(&df))
+        //                 .collect::<Result<Vec<_>>>()?;
+        //             let phys_aggs = &self.phys_aggs;
+        //
+        //             let handle = s.spawn(move |_| {
+        //
+        //                 let gb = df.groupby_with_series(keys, false, true)?.pop().unwrap();
+        //                 let groups = gb.get_groups();
+        //
+        //                 let mut columns = gb.keys();
+        //                 let agg_columns = phys_aggs
+        //                     .iter()
+        //                     .map(|expr| {
+        //                         let agg_expr = expr.as_agg_expr()?;
+        //                         let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
+        //                         if let Some(agg) = &opt_agg {
+        //                             if agg[0].len() != groups.len() {
+        //                                 panic!(format!(
+        //                                     "returned aggregation is a different length: {} than the group lengths: {}",
+        //                                     agg.len(),
+        //                                     groups.len()
+        //                                 ))
+        //                             }
+        //                         };
+        //                         Ok(opt_agg)
+        //                     }).collect::<Result<Vec<_>>>()?;
+        //
+        //                 for agg in agg_columns {
+        //                     if let Some(agg) = agg {
+        //                         for agg in agg {
+        //                             columns.push(agg)
+        //                         }
+        //                     }
+        //                 }
+        //
+        //                 let df = DataFrame::new_no_checks(columns);
+        //                 Ok(df)
+        //
+        //             });
+        //
+        //             Ok(handle)
+        //
+        //         }).collect::<Result<Vec<_>>>()?;
+        //
+        //     let dfs = handles.into_iter()
+        //         .map(|h| {
+        //             h.join().unwrap()
+        //         }).collect::<Result<Vec<_>>>()?;
+        //     // the assignment is for readability
+        //     Ok(dfs)
+        // }).unwrap();
+        // let dfs = dfs?;
 
         let df = accumulate_dataframes_vertical(dfs)?;
 

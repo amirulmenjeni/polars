@@ -752,19 +752,15 @@ impl DataFrame {
             };
             Ok(vec![gb])
         } else {
+
             let gbs = groups
                 .into_iter()
                 .enumerate()
                 .map(|(thread_idx, groups)| {
-                    let keys = splitted_sel_keys
-                        .iter()
-                        .skip(thread_idx)
-                        .step_by(n_threads)
-                        .cloned()
-                        .collect_vec();
+
                     GroupBy {
                         df: self,
-                        selected_keys: keys,
+                        selected_keys: by.clone(),
                         groups,
                         selected_agg: None,
                     }
