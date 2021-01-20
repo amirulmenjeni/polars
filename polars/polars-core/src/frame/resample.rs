@@ -100,7 +100,8 @@ impl DataFrame {
                 (gb, n, fact)
             }
         };
-        let mut gb = self.groupby_with_series(vec![gb], true)?;
+        let mut gbs = self.groupby_with_series(vec![gb], true, true)?;
+        let mut gb = gbs.pop().unwrap();
         // we restore the original scale by multiplying with the earlier floor division value
         gb.selected_keys = gb
             .selected_keys

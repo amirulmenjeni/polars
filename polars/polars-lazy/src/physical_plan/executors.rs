@@ -489,7 +489,7 @@ impl Executor for GroupByExec {
             .iter()
             .map(|e| e.evaluate(&df))
             .collect::<Result<_>>()?;
-        let gb = df.groupby_with_series(keys, true)?;
+        let gb = df.groupby_with_series(keys, true, true)?.pop().unwrap();
         if let Some(f) = &self.apply {
             return gb.apply(|df| f.call_udf(df));
         }
@@ -575,6 +575,7 @@ impl Executor for PartitionGroupByExec {
             .collect::<Result<Vec<_>>>()?;
 
         let n_threads = num_cpus::get();
+
         // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
         // splitted on several threads. Than the final result we apply the same groupby again.
         let dfs = split_df(&original_df, n_threads)?;
@@ -594,7 +595,7 @@ impl Executor for PartitionGroupByExec {
 
                     let handle = s.spawn(move |_| {
 
-                        let gb = df.groupby_with_series(keys, false)?;
+                        let gb = df.groupby_with_series(keys, false, true)?.pop().unwrap();
                         let groups = gb.get_groups();
 
                         let mut columns = gb.keys();
@@ -650,7 +651,7 @@ impl Executor for PartitionGroupByExec {
             .collect::<Result<Vec<_>>>()?;
 
         // do the same on the outer results
-        let gb = df.groupby_with_series(keys, true)?;
+        let gb = df.groupby_with_series(keys, true, true)?.pop().unwrap();
         let groups = gb.get_groups();
 
         let mut columns = gb.keys();

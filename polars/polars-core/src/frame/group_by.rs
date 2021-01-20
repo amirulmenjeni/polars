@@ -156,10 +156,10 @@ where
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
 
-fn groupby_threaded_multiple_keys_flat<I, T>(
+fn groupby_threaded_multiple_keys<I, T>(
     iters: Vec<I>,
     keys: DataFrame,
-) -> Vec<(usize, Vec<usize>)>
+) -> Vec<Vec<(usize, Vec<usize>)>>
 where
     I: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -249,7 +249,6 @@ where
                     .map(|(_k, v)| v)
                     .collect::<Vec<_>>()
             })
-            .flatten()
             .collect_vec()
     })
     .unwrap()
@@ -485,7 +484,12 @@ impl<'b> (dyn SeriesTrait + 'b) {
 }
 
 impl DataFrame {
-    pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+    pub fn groupby_with_series(
+        &self,
+        by: Vec<Series>,
+        multithreaded: bool,
+        as_single_gb: bool,
+    ) -> Result<Vec<GroupBy>> {
         let n_threads = if multithreaded { num_cpus::get() } else { 1 };
         if by.is_empty() || by[0].len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
@@ -503,7 +507,9 @@ impl DataFrame {
                 .collect(),
         )?;
 
-        // flattened splitted vec,
+        // flattened splitted vec
+        // Series are partitioned to a thread and then stored in a flattened vec
+        // every nth series is for a thread/ partition
         let splitted_sel_keys = by
             .iter()
             .map(|s| split_series(s, n_threads).unwrap())
@@ -513,7 +519,7 @@ impl DataFrame {
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
-                series.group_tuples(multithreaded)
+                vec![series.group_tuples(multithreaded)]
             }
             2 => {
                 if multithreaded {}
@@ -529,10 +535,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             3 => {
@@ -548,10 +554,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             4 => {
@@ -567,10 +573,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             5 => {
@@ -586,10 +592,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             6 => {
@@ -605,10 +611,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             7 => {
@@ -624,10 +630,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             8 => {
@@ -643,10 +649,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             9 => {
@@ -662,10 +668,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             10 => {
@@ -681,10 +687,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             11 => {
@@ -700,10 +706,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             12 => {
@@ -719,10 +725,10 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?;
 
                 if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
+                    groupby_threaded_multiple_keys(iters, keys_df)
                 } else {
                     let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
+                    vec![groupby_multiple_keys(iter, keys_df)]
                 }
             }
             _ => {
@@ -732,16 +738,41 @@ impl DataFrame {
                     .collect::<Result<Vec<_>>>()?
                     .into_dynamic_zip();
 
-                groupby(iter)
+                vec![groupby(iter)]
             }
         };
 
-        Ok(GroupBy {
-            df: self,
-            selected_keys: by,
-            groups,
-            selected_agg: None,
-        })
+        if as_single_gb {
+            let groups = groups.into_iter().flatten().collect_vec();
+            let gb = GroupBy {
+                df: self,
+                selected_keys: by,
+                groups,
+                selected_agg: None,
+            };
+            Ok(vec![gb])
+        } else {
+            let gbs = groups
+                .into_iter()
+                .enumerate()
+                .map(|(thread_idx, groups)| {
+                    let keys = splitted_sel_keys
+                        .iter()
+                        .skip(thread_idx)
+                        .step_by(n_threads)
+                        .cloned()
+                        .collect_vec();
+                    GroupBy {
+                        df: self,
+                        selected_keys: keys,
+                        groups,
+                        selected_agg: None,
+                    }
+                })
+                .collect_vec();
+
+            Ok(gbs)
+        }
     }
 
     /// Group DataFrame using a Series column.
@@ -758,7 +789,8 @@ impl DataFrame {
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let selected_keys = self.select_series(by)?;
-        self.groupby_with_series(selected_keys, true)
+        self.groupby_with_series(selected_keys, true, true)
+            .map(|mut gbs| gbs.pop().unwrap())
     }
 }
 
