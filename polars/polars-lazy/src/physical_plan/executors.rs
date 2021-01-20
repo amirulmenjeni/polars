@@ -579,8 +579,6 @@ impl Executor for PartitionGroupByExec {
         // splitted on several threads. Than the final result we apply the same groupby again.
         let dfs = split_df(&original_df, n_threads)?;
 
-        let n_threads = num_cpus::get();
-
         let dfs: Result<_> = thread::scope(|s| {
 
             let handles = (0..n_threads)
@@ -656,10 +654,15 @@ impl Executor for PartitionGroupByExec {
         let groups = gb.get_groups();
 
         let mut columns = gb.keys();
-        let agg_columns = outer_phys_aggs
+
+        let aggs_names = outer_phys_aggs
             .iter()
             .zip(aggs_and_names.iter().map(|(_, name)| name))
-            .filter_map(|(expr, name)| {
+            .collect_vec();
+
+        let agg_columns = aggs_names
+            .par_iter()
+            .map(|(expr, name)| {
                 let agg_expr = expr.as_agg_expr().unwrap();
                 // If None the column doesn't exist anymore.
                 // For instance when summing a string this column will not be in the aggregation result
@@ -670,9 +673,15 @@ impl Executor for PartitionGroupByExec {
                         s
                     })
                 })
-            });
+            })
+            .collect::<Vec<_>>();
 
-        columns.extend(agg_columns.filter_map(|opt| opt));
+        columns.extend(
+            agg_columns
+                .into_iter()
+                .filter_map(|opt| opt)
+                .filter_map(|opt| opt),
+        );
 
         let df = DataFrame::new_no_checks(columns);
         Ok(df)
